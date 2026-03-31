@@ -9,7 +9,7 @@ export default defineConfig({
     proxy: {
       // /api/anthropic → local proxy server on :3001
       '/api/anthropic': {
-        target: 'http://localhost:3001',
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:3001',
         changeOrigin: true,
       },
     },

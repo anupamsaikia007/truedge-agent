@@ -9,29 +9,13 @@
  * Start: node server.cjs   (or just run: npm run dev — it starts both)
  */
 
-const http       = require("http");
-const https      = require("https");
-const fs         = require("fs");
-const path       = require("path");
+const http  = require("http");
+const https = require("https");
 
-// ── Load .env manually (no extra packages needed) ──────────────────────────
-function loadEnv() {
-  const envPath = path.join(__dirname, ".env");
-  if (!fs.existsSync(envPath)) return;
-  const lines = fs.readFileSync(envPath, "utf8").split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const val = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
-    process.env[key] = process.env[key] ?? val;
-  }
-}
-loadEnv();
+// ── Load .env via dotenv ──────────────────────────────────────────────────────
+require("dotenv").config();
 
-const PORT    = 3001;
+const PORT    = parseInt(process.env.PORT || "3001", 10);
 const API_KEY = process.env.ANTHROPIC_API_KEY || "";
 
 if (!API_KEY || API_KEY.includes("paste-your-key")) {
@@ -41,11 +25,19 @@ if (!API_KEY || API_KEY.includes("paste-your-key")) {
   console.error("    3. Restart with: npm run dev\n");
 }
 
+const MAX_BODY_BYTES = 1_048_576; // 1 MB
+
 const server = http.createServer((req, res) => {
-  // CORS — allow the Vite dev server (any localhost origin)
-  res.setHeader("Access-Control-Allow-Origin",  "*");
+  // CORS — allow only the Vite dev server
+  res.setHeader("Access-Control-Allow-Origin",  "http://localhost:5173");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  // Security headers
+  res.setHeader("X-Content-Type-Options",    "nosniff");
+  res.setHeader("X-Frame-Options",           "DENY");
+  res.setHeader("Cache-Control",             "no-store");
+  res.setHeader("Strict-Transport-Security", "max-age=63072000");
 
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
@@ -54,7 +46,17 @@ const server = http.createServer((req, res) => {
   }
 
   let body = "";
-  req.on("data", chunk => { body += chunk; });
+  let bodyBytes = 0;
+
+  req.on("data", chunk => {
+    bodyBytes += chunk.length;
+    if (bodyBytes > MAX_BODY_BYTES) {
+      req.destroy();
+      res.writeHead(413); res.end("Payload too large"); return;
+    }
+    body += chunk;
+  });
+
   req.on("end", () => {
     let parsed;
     try { parsed = JSON.parse(body); }
@@ -81,10 +83,21 @@ const server = http.createServer((req, res) => {
       apiRes.pipe(res);
     });
 
+    // Abort upstream request if it hangs for more than 30 seconds
+    proxy.setTimeout(30_000, () => {
+      proxy.destroy();
+      if (!res.headersSent) {
+        res.writeHead(504);
+        res.end(JSON.stringify({ error: { message: "Upstream request timed out" } }));
+      }
+    });
+
     proxy.on("error", (err) => {
       console.error("Proxy error:", err.message);
-      res.writeHead(502);
-      res.end(JSON.stringify({ error: { message: "Proxy error: " + err.message } }));
+      if (!res.headersSent) {
+        res.writeHead(502);
+        res.end(JSON.stringify({ error: { message: "Upstream request failed" } }));
+      }
     });
 
     proxy.write(payload);
@@ -92,7 +105,19 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+function shutdown(signal) {
+  console.log(`\n${signal} received — shutting down gracefully…`);
+  server.close(() => {
+    console.log("Server closed.");
+    process.exit(0);
+  });
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT",  () => shutdown("SIGINT"));
+
+// ── Bind to localhost only ────────────────────────────────────────────────────
+server.listen(PORT, "127.0.0.1", () => {
   console.log(`\n✅  TruEdge proxy running on http://localhost:${PORT}`);
   console.log(`    Forwarding → https://api.anthropic.com/v1/messages`);
   console.log(`    API key   : ${API_KEY ? API_KEY.slice(0, 16) + "…" : "⚠ NOT SET"}\n`);

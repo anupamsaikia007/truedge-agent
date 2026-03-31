@@ -84,11 +84,15 @@ async function runAgentCall(briefType = "daily") {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
+  const controller = new AbortController();
+  const timeoutId  = setTimeout(() => controller.abort(), 120_000);
+
   let res;
   try {
     res = await fetch("/api/anthropic", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         model:      "claude-sonnet-4-20250514",
         max_tokens: 4000,
@@ -101,15 +105,18 @@ async function runAgentCall(briefType = "daily") {
       }),
     });
   } catch (e) {
+    if (e.name === "AbortError") throw new Error("Request timed out after 2 minutes. Please try again.");
     throw new Error(
       "Cannot reach the proxy server. Make sure you started both processes with npm run dev (or node server.cjs is running on port 3001)."
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try { const j = await res.json(); msg = j?.error?.message || msg; } catch {}
-    if (res.status === 401) throw new Error("Invalid API key. Check VITE_ANTHROPIC_API_KEY in your .env file.");
+    if (res.status === 401) throw new Error("Invalid API key. Check ANTHROPIC_API_KEY in your .env file.");
     if (res.status === 403) throw new Error("API key doesn't have permission. Web search requires a paid Anthropic plan.");
     throw new Error(msg);
   }
@@ -126,7 +133,19 @@ async function runAgentCall(briefType = "daily") {
   const start = clean.indexOf("{");
   const end   = clean.lastIndexOf("}");
   if (start === -1 || end === -1) throw new Error("Agent returned no valid JSON. Please try again.");
-  return JSON.parse(clean.slice(start, end + 1));
+  const parsed = JSON.parse(clean.slice(start, end + 1));
+
+  const required = [
+    ["executiveSnapshot",    Array.isArray],
+    ["detailedIntelligence", Array.isArray],
+    ["advisoryEdge",         v => v && typeof v === "object" && !Array.isArray(v)],
+    ["modelPortfolioSignals",v => v && typeof v === "object" && !Array.isArray(v)],
+    ["insuranceIntelligence",v => v && typeof v === "object" && !Array.isArray(v)],
+  ];
+  for (const [key, check] of required) {
+    if (!check(parsed[key])) throw new Error(`Agent response missing or malformed field: "${key}". Please try again.`);
+  }
+  return parsed;
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────────
