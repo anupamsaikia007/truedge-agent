@@ -109,7 +109,7 @@ async function runAgentCall(briefType = "daily") {
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try { const j = await res.json(); msg = j?.error?.message || msg; } catch {}
-    if (res.status === 401) throw new Error("Invalid API key. Check VITE_ANTHROPIC_API_KEY in your .env file.");
+    if (res.status === 401) throw new Error("Invalid API key. Check ANTHROPIC_API_KEY in your .env file.");
     if (res.status === 403) throw new Error("API key doesn't have permission. Web search requires a paid Anthropic plan.");
     throw new Error(msg);
   }
