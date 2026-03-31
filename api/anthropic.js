@@ -19,7 +19,7 @@ export default function handler(req, res) {
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   if (req.method !== "POST")   { res.status(405).end("Method not allowed"); return; }
 
-  const API_KEY = process.env.ANTHROPIC_API_KEY || "";
+  const API_KEY = process.env.VITE_ANTHROPIC_API_KEY || "";
   if (!API_KEY) {
     res.status(500).json({ error: { message: "Server misconfigured: missing API key" } });
     return;
