@@ -83,8 +83,8 @@ const server = http.createServer((req, res) => {
       apiRes.pipe(res);
     });
 
-    // Abort upstream request if it hangs for more than 30 seconds
-    proxy.setTimeout(30_000, () => {
+    // Abort upstream request if it hangs for more than 120 seconds
+    proxy.setTimeout(120_000, () => {
       proxy.destroy();
       if (!res.headersSent) {
         res.writeHead(504);
