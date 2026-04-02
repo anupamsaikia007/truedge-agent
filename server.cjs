@@ -27,6 +27,9 @@ if (!API_KEY || API_KEY.includes("paste-your-key")) {
 
 const MAX_BODY_BYTES = 1_048_576; // 1 MB
 
+// Fields we allow the frontend to set; everything else is fixed server-side.
+const ALLOWED_FIELDS = new Set(["model", "max_tokens", "system", "tools", "messages"]);
+
 const server = http.createServer((req, res) => {
   // CORS — allow only the Vite dev server
   res.setHeader("Access-Control-Allow-Origin",  "http://localhost:5173");
@@ -45,8 +48,10 @@ const server = http.createServer((req, res) => {
     res.writeHead(404); res.end("Not found"); return;
   }
 
-  let body = "";
-  let bodyBytes = 0;
+  const chunks    = [];
+  let   bodyBytes = 0;
+
+  req.on("error", () => { req.destroy(); });
 
   req.on("data", chunk => {
     bodyBytes += chunk.length;
@@ -54,15 +59,21 @@ const server = http.createServer((req, res) => {
       req.destroy();
       res.writeHead(413); res.end("Payload too large"); return;
     }
-    body += chunk;
+    chunks.push(chunk);
   });
 
   req.on("end", () => {
     let parsed;
-    try { parsed = JSON.parse(body); }
+    try { parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
     catch { res.writeHead(400); res.end("Bad JSON"); return; }
 
-    const payload = JSON.stringify(parsed);
+    // Strip any keys the frontend shouldn't be able to set
+    const safe = {};
+    for (const key of ALLOWED_FIELDS) {
+      if (key in parsed) safe[key] = parsed[key];
+    }
+
+    const payload = JSON.stringify(safe);
 
     const options = {
       hostname: "api.anthropic.com",
@@ -80,8 +91,12 @@ const server = http.createServer((req, res) => {
 
     const proxy = https.request(options, (apiRes) => {
       res.writeHead(apiRes.statusCode, { "Content-Type": "application/json" });
+      apiRes.on("error", () => { if (!res.writableEnded) res.end(); });
       apiRes.pipe(res);
     });
+
+    // Abort upstream if client disconnects mid-stream
+    res.on("close", () => { if (!res.writableEnded) proxy.destroy(); });
 
     // Abort upstream request if it hangs for more than 120 seconds
     proxy.setTimeout(120_000, () => {
