@@ -71,10 +71,10 @@ Return this EXACT JSON structure:
 Rules:
 - tag must be one of: REGULATION, MUTUAL FUND, INSURANCE, MARKET, STRATEGY
 - Use only credible sources: SEBI, AMFI, IRDAI, ET Wealth, Mint, Business Standard, Value Research, Morningstar India
-- executiveSnapshot: 6-8 items, most critical first
-- detailedIntelligence: 4-5 items
-- advisoryEdge arrays: 2-3 items each
-- modelPortfolioSignals.sectorOpportunities: 2-3 items
+- executiveSnapshot: 4-5 items, most critical first
+- detailedIntelligence: 2-3 items
+- advisoryEdge arrays: 2 items each
+- modelPortfolioSignals.sectorOpportunities: 2 items
 - Write like Goldman Sachs Private Wealth — concise, sharp, high signal-to-noise
 - Focus ONLY on India-relevant personal finance and wealth management
 - Return ONLY the raw JSON object, absolutely nothing else`;
@@ -96,7 +96,7 @@ async function runAgentCall(briefType = "daily") {
       signal: controller.signal,
       body: JSON.stringify({
         model:      "claude-sonnet-4-20250514",
-        max_tokens: 4000,
+        max_tokens: 2000,
         system:     SYSTEM_PROMPT,
         tools:      [{ type: "web_search_20250305", name: "web_search" }],
         messages:   [{
