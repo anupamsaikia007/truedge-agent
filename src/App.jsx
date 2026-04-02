@@ -153,7 +153,7 @@ async function runAgentCall(briefType = "daily") {
 const LS_BRIEFS   = "truedge-briefs-v1";
 const LS_SCHEDULE = "truedge-schedule-v1";
 const lsGet = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
-const lsSet = (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const lsSet = (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { console.warn("localStorage write failed:", e); } };
 
 // ── Atoms ─────────────────────────────────────────────────────────────────────
 function Dot({ color, pulse, size = 7 }) {

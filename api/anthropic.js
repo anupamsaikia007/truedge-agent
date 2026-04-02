@@ -2,10 +2,14 @@ import https from "https";
 
 const MAX_BODY_BYTES = 1_048_576; // 1 MB
 
+// Fields we allow the frontend to set; everything else is fixed server-side.
+const ALLOWED_FIELDS = new Set(["model", "max_tokens", "system", "tools", "messages"]);
+
 export default function handler(req, res) {
-  // CORS — only needed for localhost dev (on Vercel, frontend and API are same-origin)
+  // CORS — Vercel serves frontend and API from the same origin so no header
+  // is needed in production. Allow localhost only for local dev.
   const origin = req.headers.origin || "";
-  if (origin.startsWith("http://localhost")) {
+  if (origin === "http://localhost:5173") {
     res.setHeader("Access-Control-Allow-Origin",  origin);
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -25,8 +29,10 @@ export default function handler(req, res) {
     return;
   }
 
-  let body      = "";
-  let bodyBytes = 0;
+  const chunks    = [];
+  let   bodyBytes = 0;
+
+  req.on("error", () => { req.destroy(); });
 
   req.on("data", chunk => {
     bodyBytes += chunk.length;
@@ -35,15 +41,21 @@ export default function handler(req, res) {
       res.status(413).end("Payload too large");
       return;
     }
-    body += chunk;
+    chunks.push(chunk);
   });
 
   req.on("end", () => {
     let parsed;
-    try { parsed = JSON.parse(body); }
+    try { parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
     catch { res.status(400).end("Bad JSON"); return; }
 
-    const payload = JSON.stringify(parsed);
+    // Strip any keys the frontend shouldn't be able to set
+    const safe = {};
+    for (const key of ALLOWED_FIELDS) {
+      if (key in parsed) safe[key] = parsed[key];
+    }
+
+    const payload = JSON.stringify(safe);
 
     const options = {
       hostname: "api.anthropic.com",
@@ -61,8 +73,12 @@ export default function handler(req, res) {
 
     const proxy = https.request(options, (apiRes) => {
       res.status(apiRes.statusCode).setHeader("Content-Type", "application/json");
+      apiRes.on("error", () => { if (!res.writableEnded) res.end(); });
       apiRes.pipe(res);
     });
+
+    // Abort upstream if client disconnects mid-stream
+    res.on("close", () => { if (!res.writableEnded) proxy.destroy(); });
 
     proxy.setTimeout(55_000, () => {
       proxy.destroy();
