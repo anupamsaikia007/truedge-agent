@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Analytics } from "@vercel/analytics/react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTE: No API key needed here. It lives in .env and is read by server.cjs
@@ -295,7 +296,7 @@ function AdvisoryView({ data }) {
           </div>
           {(data[key] || []).map((item, i) => (
             <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", paddingBottom: i < (data[key].length - 1) ? 10 : 0, marginBottom: i < (data[key].length - 1) ? 10 : 0, borderBottom: i < (data[key].length - 1) ? `1px solid ${C.border}` : "none" }}>
-              <span style={{ color: color, fontSize: 8, marginTop: 5, flexShrink: 0 }}>◆</span>
+              <span style={{ color: color, fontSize: 8, marginTop: 5, flexShrink: 0 }}>��</span>
               <span style={{ color: C.light, fontSize: 13, lineHeight: 1.65 }}>{item}</span>
             </div>
           ))}
@@ -742,6 +743,7 @@ export default function App() {
           )}
         </main>
       </div>
+      <Analytics />
     </div>
   );
 }
